@@ -1,0 +1,158 @@
+// java: Zulu-11.35.13-ca-jdk11.0.5
+plugins {
+	id 'org.springframework.boot' version '2.2.0.RELEASE'
+	// A Gradle plugin that provides Maven-like dependency management functionality
+	id 'io.spring.dependency-management' version '1.0.8.RELEASE'
+	id 'org.asciidoctor.convert' version '1.5.8'
+	id 'java'
+	id 'com.google.cloud.tools.jib' version "1.7.0"
+}
+
+group = 'com.practice'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '11'
+
+def userName = 'wbfw109'
+def imageName = "${userName}/${project.name}"
+def stackName = "${project.name}-stack"
+
+ext {
+	BUILD_VERSION = new Date().format("yyyyMMddHHmmss") // 빌드한 시간을 Image Tag 로 표시하기 위하여 사용한다.
+}
+
+configurations {
+	developmentOnly
+	runtimeClasspath {
+		extendsFrom developmentOnly
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	set('snippetsDir', file("build/generated-snippets"))
+	set('vaadinVersion', "14.0.10")
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'com.vaadin:vaadin-spring-boot-starter'
+	// !!! Vaadin PRO (subscription) :vaadin
+	implementation 'com.vaadin:vaadin'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'mysql:mysql-connector-java'
+	testImplementation('org.springframework.boot:spring-boot-starter-test') {
+		exclude group: 'org.junit.vintage', module: 'junit-vintage-engine'
+	}
+	testImplementation 'org.springframework.restdocs:spring-restdocs-mockmvc'
+	testImplementation 'org.springframework.security:spring-security-test'
+	implementation 'org.springframework.boot:spring-boot-configuration-processor'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "com.vaadin:vaadin-bom:${vaadinVersion}"
+	}
+}
+
+test {
+	outputs.dir snippetsDir
+	useJUnitPlatform()
+}
+
+asciidoctor {
+	inputs.dir snippetsDir
+	dependsOn test
+}
+
+
+// default file name: $(proejct-name)-$(version)
+// don't need these because Spring Boot. not normal jar and build -> require task bootJar
+jar {
+	enabled = true
+	manifest {
+		attributes 'Implementation-Title': "${imageName}",
+				'Implementation-Version': "${project.version}",
+				'Main-Class': 'com.practice.dontcallme.DontcallmeApplication'
+	}
+	from {
+		configurations.compile.collect {it.isDirectory()? it: zipTree(it)}
+	}
+}
+//bootJar {
+//	launchScript()
+//}
+//springBoot {
+//	buildInfo()
+//}
+
+jib {   // create image and push (not remains in local!)        // jib ~ 명령어 사용 전 build 해야 하는듯.?
+	from {
+		image = "openjdk:11"
+		// docker:// 붙이면 왜 안되지..  로컬환경에 설치되어 있는 도커데몬에서 Base Image 를 가져온다. 인데.. 오류 뜨면 이거때문..
+		// > com.google.cloud.tools.jib.plugins.common.BuildStepsExecutionException: Unexpected character ('s' (code 115)): was expecting double-quote to start field name
+	}
+	to {
+		image = "${imageName}"
+		tags = ["${project.version}".toString(), "${BUILD_VERSION}".toString()]
+//        credHelper = "pass"
+	}
+	// You can add arbitrary, non-classpath files to the image by placing them in a src/main/jib directory.  // can be list like ['src/main/custom-extra-dir', '/home/user/jib-extras']
+	// This will copy all files within the jib folder to the image's root directory, maintaining the same structure (e.g. if you have a text file at src/main/jib/dir/hello.txt, then your image will contain /dir/hello.txt after being built with Jib).
+	// if Dictionary is not src/main/jib, arbitrary path routes /
+	extraDirectories {
+		paths = './_secret/jibExtraDirectories'
+	}
+}
+
+
+
+
+//----------------------------------------------//
+//-------------------- task --------------------//
+//----------------------------------------------//
+project.ext.set("temp", "temp_result")
+/* docker command:  // set true because causing Error: non-zero exit value 1 (docker command)
+    run, remove 는 IDE - Service tab, docker-compose.yml (초록색 화살표 2개, 1개) 에서 유연하게 해결 가능
+*/
+
+
+// ----- if docker swarm ----- https://docs.docker.com/engine/reference/commandline/stack_deploy/
+task dockerStackDeploy(type: Exec) {
+	group = "jib"
+	commandLine 'docker', 'stack', 'deploy', '-c', '.\\docker-compose-deploy.yml', "${stackName}"
+}
+task dockerStackDeployRemove(type: Exec) {
+	group = "jib"
+	commandLine 'docker', 'stack', 'rm', "${stackName}"
+}
+task dockerTestServiceRemove(type: Exec) {
+	group = "jib"
+	commandLine 'docker', 'service', 'rm', "${stackName}_${project.name}"
+}
+
+/* ★★★
+    // only "docker stack deploy"
+    in OS firewall for Docker-overlay network:
+        TCP port 2377 for cluster management communications
+        TCP and UDP port 7946 for communication among nodes
+
+- 나중에 Gradle JDK 14 지원되면, 배포 환경 openjdk:14-jdk-alpine 으로 갈아타기
+- .properties 파일은 주석이 # 임, // 가 아님에 주의!
+
+    Major task
+        build - clean, build
+        jib - dockerStackDeploy, dockerStackDeployRemove, jib, jibDockerBuild
+
+    ? in project top-level path
+        ./gradlew build --scasn
+        // if it causes cache error, delete folder in "C:\Users\%USERNAME%\.gradle\caches\ERROR_ERSION"
+
+gradle image: docker exec $(docker ps -f "name=gradle" -q) grad
+le bulid
+
+*/
+

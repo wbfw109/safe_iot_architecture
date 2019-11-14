@@ -1,0 +1,78 @@
+version: '3.7'
+services:
+  ## Only use Programs when: {docker-compose} in development
+  mysql:
+    image: mysql
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysql", "--version"]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dontcallme
+      MYSQL_USER: mysql_user
+      MYSQL_PASSWORD: mysql_user_password
+    cap_add:
+      - SYS_NICE
+    restart: always
+    ports:
+      - 3306:3306
+    networks:
+      - webnet
+
+  adminer:
+    image: adminer
+    depends_on:
+      - mysql
+    restart: always
+    # can not be changed port
+    ports:
+      - 8080:8080
+    networks:
+      - webnet
+
+  #management containers for manager
+  portainer:
+    image: portainer/portainer
+    volumes:
+      - type: bind
+        source: //var/run/docker.sock
+        target: /var/run/docker.sock
+    restart: always
+    ports:
+      - 8000:8000
+      - 9000:9000
+    networks:
+      - webnet
+
+  ## Comment out all dontcallme services during development.
+  dontcallme:
+    image: wbfw109/dontcallme:0.0.1-SNAPSHOT
+    depends_on:
+      - mysql
+    environment:
+      # SPRING_PROFILES_ACTIVE: either  "dev" or "dev-check"
+      SPRING_PROFILES_ACTIVE: dev-check
+    restart: always
+    ports:
+      - 8081:8081
+    networks:
+      - webnet
+
+#volumes:
+#  mydata:
+#    driver_opts:
+#      type: "nfs"
+#      o: "addr=10.40.0.199,nolock,soft,rw"
+##      device: ":/docker/example"
+
+networks:
+  webnet:
+
+
+## ★.. 쿠버네티스로 갈아타기.. 테스트가 좀; 힘듬.. 환경변수.. in docker-compose.yml environments only receive String, number, or null. not boolean, list
+# Please, implement this. Tuning networks list via orchestration of compose/swarm configs is really terrible.
+

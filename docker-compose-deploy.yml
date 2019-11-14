@@ -1,0 +1,136 @@
+version: '3.7'
+services:
+  ### Only use when Program: {docker swarm, Kubernetes ...}
+  ## This may take 120 seconds or more. You will need to make sure that mysql is turned on with the "service ls" command so spring will be turned on.
+  dontcallme:
+    image: wbfw109/dontcallme:0.0.1-SNAPSHOT
+    depends_on:
+      - mysql
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    ports:
+      - 8081:8081
+    networks:
+      - swarm
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 200M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 10s
+    secrets:
+      - mysql_database
+      - mysql_user
+      - mysql_user_password
+      - server_store_password
+
+  mysql:
+    image: mysql
+    healthcheck:
+      test: ["CMD", "mysql", "--version"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    environment:
+      MYSQL_DATABASE_FILE: /run/secrets/mysql_database
+      MYSQL_USER_FILE: /run/secrets/mysql_user
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_user_password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    ports:
+      - 3306:3306
+    networks:
+      - swarm
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 500M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 10s
+    secrets:
+      - mysql_database
+      - mysql_user
+      - mysql_user_password
+      - mysql_root_password
+
+  #management containers for manager
+  portainer:
+    image: portainer/portainer
+    volumes:
+      - type: bind
+        source: //var/run/docker.sock
+        target: /var/run/docker.sock
+    ports:
+      - 8000:8000
+      - 9000:9000
+    networks:
+      - swarm
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 10s
+
+  ## swarm visualizer
+  visualizer:
+    image: dockersamples/visualizer
+    volumes:
+      - type: bind
+        source: //var/run/docker.sock
+        target: /var/run/docker.sock
+    ports:
+      - 8080:8080
+    networks:
+      - swarm
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+        window: 10s
+
+#volumes:
+#  mydata:
+#    driver_opts:
+#      type: "nfs"
+#      o: "addr=10.40.0.199,nolock,soft,rw"
+##      device: ":/docker/example"
+
+networks:
+  swarm:
+    driver: overlay
+
+secrets:
+  mysql_database:
+    file: ./_secret/mysql_database.txt
+  mysql_user_password:
+    file: ./_secret/mysql_user_password.txt
+  mysql_user:
+    file: ./_secret/mysql_user.txt
+  mysql_root_password:
+    file: ./_secret/mysql_root_password.txt
+  server_store_password:
+    file: ./_secret/_mc_ooparts_best-server_password.txt
+
+## ★.. 쿠버네티스로 갈아타기.. 테스트가 좀; 힘듬.. 환경변수.. in docker-compose.yml environments only receive String, number, or null. not boolean, list
+# Please, implement this. Tuning networks list via orchestration of compose/swarm configs is really terrible.
+
