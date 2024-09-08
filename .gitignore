@@ -32,7 +32,7 @@ out/
 .vscode/
 
 ## secret files
-_secret/
+# _secret/
 
 ## node modules // if others download this fodler and server opens, it causes error.
 node_modules
